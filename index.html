@@ -1,0 +1,304 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaskFlow | Productivity Dashboard</title>
+<style>
+:root {
+  font-family: system-ui, sans-serif;
+  color: #edf2ff;
+  background: #0c1220;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+header {
+  padding: 22px 6%;
+  border-bottom: 1px solid #29334a;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.logo { font-size: 23px; font-weight: 800; }
+.logo span { color: #818cf8; }
+main { max-width: 1000px; margin: auto; padding: 32px 18px; }
+h1 { margin-bottom: 5px; }
+.muted { color: #9ba9c4; }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 14px;
+  margin: 28px 0;
+}
+.card, .panel {
+  background: #172136;
+  border: 1px solid #293750;
+  border-radius: 15px;
+  padding: 20px;
+}
+.number { font-size: 32px; font-weight: 800; margin-top: 10px; }
+form { display: grid; gap: 12px; }
+input, select, button {
+  font: inherit;
+  padding: 12px;
+  border-radius: 9px;
+}
+input, select {
+  background: #0c1527;
+  border: 1px solid #3a4966;
+  color: white;
+  min-width: 0;
+}
+button {
+  background: #6366f1;
+  color: white;
+  border: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:hover { filter: brightness(1.15); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.toolbar {
+  display: flex;
+  gap: 10px;
+  margin: 24px 0 15px;
+  flex-wrap: wrap;
+}
+.toolbar input { flex: 1; }
+.task {
+  background: #172136;
+  border: 1px solid #293750;
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.task-info { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.task-title { font-weight: 700; }
+.completed .task-title {
+  text-decoration: line-through;
+  color: #8895ae;
+}
+.tag {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-top: 7px;
+}
+.high { background: #652c3a; color: #ffb1bc; }
+.medium { background: #564326; color: #ffda8a; }
+.low { background: #244d42; color: #91efc4; }
+.delete { background: #433044; }
+.progress {
+  height: 9px;
+  background: #303b52;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 15px;
+}
+#bar { height: 100%; background: #818cf8; width: 0; transition: width .3s; }
+.empty { text-align: center; padding: 35px; color: #9ba9c4; }
+@media(max-width:600px) {
+  .stats { gap: 7px; }
+  .card { padding: 12px; }
+  .number { font-size: 24px; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Task<span>Flow</span></div>
+  <span class="muted">Productivity Dashboard</span>
+</header>
+<main>
+  <h1>My Workspace</h1>
+  <p class="muted">Organize your work. Track your progress.</p>
+
+  <section class="stats">
+    <div class="card">
+      <div class="muted">Total Tasks</div>
+      <div class="number" id="total">0</div>
+    </div>
+    <div class="card">
+      <div class="muted">Completed</div>
+      <div class="number" id="done">0</div>
+    </div>
+    <div class="card">
+      <div class="muted">Pending</div>
+      <div class="number" id="pending">0</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Progress</h2>
+    <span id="percent">0% complete</span>
+    <div class="progress"><div id="bar"></div></div>
+  </section>
+
+  <section class="panel" style="margin-top:20px">
+    <h2>Create New Task</h2>
+    <form id="taskForm">
+      <input id="title" placeholder="What needs to be done?"
+             maxlength="120" required>
+      <div class="form-row">
+        <select id="priority">
+          <option value="high">High Priority</option>
+          <option value="medium" selected>Medium Priority</option>
+          <option value="low">Low Priority</option>
+        </select>
+        <input id="deadline" type="date">
+      </div>
+      <button type="submit">+ Add Task</button>
+    </form>
+  </section>
+
+  <div class="toolbar">
+    <input id="search" placeholder="Search tasks...">
+    <select id="filter">
+      <option value="all">All Tasks</option>
+      <option value="active">Pending</option>
+      <option value="completed">Completed</option>
+    </select>
+  </div>
+  <section id="tasks" aria-live="polite"></section>
+</main>
+
+<script>
+const STORAGE_KEY = "taskflow-v1";
+
+function loadTasks() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+let tasks = loadTasks();
+
+const $ = id => document.getElementById(id);
+
+function save() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  } catch {
+    alert("Your browser could not save tasks.");
+  }
+}
+
+function addTask(event) {
+  event.preventDefault();
+  const title = $("title").value.trim();
+  if (!title) return;
+
+  tasks.unshift({
+    id: crypto.randomUUID(),
+    title,
+    priority: $("priority").value,
+    deadline: $("deadline").value,
+    completed: false
+  });
+
+  save();
+  $("taskForm").reset();
+  render();
+}
+
+function toggleTask(id) {
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+  task.completed = !task.completed;
+  save();
+  render();
+}
+
+function deleteTask(id) {
+  tasks = tasks.filter(t => t.id !== id);
+  save();
+  render();
+}
+
+function render() {
+  const completed = tasks.filter(t => t.completed).length;
+  const total = tasks.length;
+  const percentage = total ? Math.round(completed / total * 100) : 0;
+
+  $("total").textContent = total;
+  $("done").textContent = completed;
+  $("pending").textContent = total - completed;
+  $("percent").textContent = percentage + "% complete";
+  $("bar").style.width = percentage + "%";
+
+  const query = $("search").value.toLowerCase();
+  const filter = $("filter").value;
+
+  const visible = tasks.filter(t => {
+    const matchesSearch = t.title.toLowerCase().includes(query);
+    const matchesFilter = filter === "all" ||
+      (filter === "active" && !t.completed) ||
+      (filter === "completed" && t.completed);
+    return matchesSearch && matchesFilter;
+  });
+
+  const container = $("tasks");
+  container.replaceChildren();
+
+  if (!visible.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "No matching tasks found.";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const task of visible) {
+    const item = document.createElement("article");
+    item.className = "task" + (task.completed ? " completed" : "");
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = task.completed;
+    checkbox.setAttribute("aria-label", "Complete " + task.title);
+    checkbox.addEventListener("change", () => toggleTask(task.id));
+
+    const info = document.createElement("div");
+    info.className = "task-info";
+
+    const title = document.createElement("div");
+    title.className = "task-title";
+    title.textContent = task.title;
+
+    const tag = document.createElement("span");
+    tag.className = "tag " + task.priority;
+    tag.textContent = task.priority.toUpperCase();
+
+    const date = document.createElement("small");
+    date.className = "muted";
+    date.textContent = task.deadline ? "  Due: " + task.deadline : "";
+
+    info.append(title, tag, date);
+
+    const remove = document.createElement("button");
+    remove.className = "delete";
+    remove.textContent = "Delete";
+    remove.setAttribute("aria-label", "Delete " + task.title);
+    remove.addEventListener("click", () => deleteTask(task.id));
+
+    item.append(checkbox, info, remove);
+    container.appendChild(item);
+  }
+}
+
+$("taskForm").addEventListener("submit", addTask);
+$("search").addEventListener("input", render);
+$("filter").addEventListener("change", render);
+render();
+</script>
+</body>
+</html>
